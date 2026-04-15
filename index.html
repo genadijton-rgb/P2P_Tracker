@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>P2P Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    /* ── TOKENS ── */
+    :root, [data-theme="light"] {
+      --bg: #f7f6f2; --surface: #f9f8f5; --surface-2: #f3f0ec;
+      --border: #d4d1ca; --divider: #dcd9d5;
+      --text: #28251d; --muted: #7a7974; --faint: #bab9b4;
+      --primary: #01696f; --primary-h: #0c4e54;
+      --success: #437a22; --success-bg: #d4dfcc;
+      --error: #a12c7b; --error-bg: #e0ced7;
+      --warning: #964219; --warning-bg: #ddcfc6;
+      --gold: #d19900; --gold-bg: #e9e0c6;
+      --shadow: 0 4px 12px oklch(0.2 0.01 80 / 0.08);
+      --radius: 0.75rem; --radius-sm: 0.375rem;
+      --font-body: 'Inter', sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+    [data-theme="dark"] {
+      --bg: #171614; --surface: #1c1b19; --surface-2: #242320;
+      --border: #393836; --divider: #262523;
+      --text: #cdccca; --muted: #797876; --faint: #5a5957;
+      --primary: #4f98a3; --primary-h: #227f8b;
+      --success: #6daa45; --success-bg: rgba(109,170,69,0.12);
+      --error: #d163a7; --error-bg: rgba(209,99,167,0.1);
+      --warning: #bb653b; --warning-bg: rgba(187,101,59,0.12);
+      --gold: #e8af34; --gold-bg: rgba(232,175,52,0.12);
+      --shadow: 0 4px 12px oklch(0 0 0 / 0.3);
+    }
+    @media (prefers-color-scheme: dark) { :root:not([data-theme]) { --bg: #171614; --surface: #1c1b19; --surface-2: #242320; --border: #393836; --divider: #262523; --text: #cdccca; --muted: #797876; --faint: #5a5957; --primary: #4f98a3; --primary-h: #227f8b; --success: #6daa45; --success-bg: rgba(109,170,69,0.12); --error: #d163a7; --error-bg: rgba(209,99,167,0.1); --warning: #bb653b; --warning-bg: rgba(187,101,59,0.12); --gold: #e8af34; --gold-bg: rgba(232,175,52,0.12); --shadow: 0 4px 12px oklch(0 0 0 / 0.3); } }
+
+    /* ── BASE ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { -webkit-font-smoothing: antialiased; scroll-behavior: smooth; }
+    body { font-family: var(--font-body); font-size: 14px; color: var(--text); background: var(--bg); min-height: 100dvh; }
+    button { cursor: pointer; background: none; border: none; font: inherit; color: inherit; }
+    table { border-collapse: collapse; width: 100%; }
+
+    /* ── LAYOUT ── */
+    .app { display: flex; flex-direction: column; min-height: 100dvh; }
+
+    /* ── HEADER ── */
+    .header {
+      position: sticky; top: 0; z-index: 100;
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      padding: 0 24px; height: 56px;
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 16px;
+    }
+    .header-left { display: flex; align-items: center; gap: 12px; }
+    .logo { display: flex; align-items: center; gap: 8px; }
+    .logo-icon { width: 28px; height: 28px; background: var(--primary); border-radius: 6px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .logo-text { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
+    .logo-text span { color: var(--primary); }
+    .week-badge {
+      font-size: 12px; font-weight: 500; color: var(--muted);
+      background: var(--surface-2); border: 1px solid var(--border);
+      padding: 3px 10px; border-radius: 999px;
+    }
+    .header-right { display: flex; align-items: center; gap: 8px; }
+    .refresh-btn {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 13px; font-weight: 500; color: var(--muted);
+      background: var(--surface-2); border: 1px solid var(--border);
+      padding: 5px 12px; border-radius: 6px;
+      transition: all 180ms ease;
+    }
+    .refresh-btn:hover { color: var(--text); border-color: var(--primary); }
+    .refresh-btn.loading svg { animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .theme-btn {
+      width: 32px; height: 32px; border-radius: 6px;
+      border: 1px solid var(--border); background: var(--surface-2);
+      color: var(--muted); display: flex; align-items: center; justify-content: center;
+      transition: all 180ms ease;
+    }
+    .theme-btn:hover { color: var(--text); border-color: var(--primary); }
+    .last-updated { font-size: 11px; color: var(--faint); }
+
+    /* ── TABS ── */
+    .tabs {
+      display: flex; align-items: center; gap: 2px;
+      padding: 0 24px; background: var(--surface);
+      border-bottom: 1px solid var(--border);
+    }
+    .tab {
+      font-size: 13px; font-weight: 500; color: var(--muted);
+      padding: 12px 14px; border-bottom: 2px solid transparent;
+      transition: all 180ms ease; white-space: nowrap;
+    }
+    .tab:hover { color: var(--text); }
+    .tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+
+    /* ── MAIN ── */
+    .main { flex: 1; padding: 24px; max-width: 1280px; width: 100%; margin: 0 auto; }
+    .page { display: none; }
+    .page.active { display: block; }
+
+    /* ── KPI GRID ── */
+    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-bottom: 24px; }
+    .kpi-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 16px 18px;
+    }
+    .kpi-label { font-size: 11px; font-weight: 600; color: var(--faint); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 8px; }
+    .kpi-value { font-family: var(--font-mono); font-size: 22px; font-weight: 700; line-height: 1; }
+    .kpi-value.positive { color: var(--success); }
+    .kpi-value.negative { color: var(--error); }
+    .kpi-value.neutral { color: var(--text); }
+    .kpi-value.accent { color: var(--primary); }
+    .kpi-sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+    /* ── SECTION ── */
+    .section { margin-bottom: 24px; }
+    .section-title {
+      font-size: 13px; font-weight: 600; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.07em;
+      margin-bottom: 12px; display: flex; align-items: center; gap: 8px;
+    }
+    .section-title::after { content: ''; flex: 1; height: 1px; background: var(--divider); }
+
+    /* ── CARDS GRID ── */
+    .cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 16px 18px;
+    }
+
+    /* ── TABLE ── */
+    .table-wrap { overflow-x: auto; }
+    .data-table {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); overflow: hidden;
+    }
+    .data-table table { width: 100%; }
+    .data-table th {
+      font-size: 11px; font-weight: 600; color: var(--faint);
+      text-transform: uppercase; letter-spacing: 0.07em;
+      padding: 10px 14px; text-align: left;
+      background: var(--surface-2); border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    .data-table td {
+      font-size: 13px; color: var(--text);
+      padding: 10px 14px; border-bottom: 1px solid var(--divider);
+      white-space: nowrap;
+    }
+    .data-table tr:last-child td { border-bottom: none; }
+    .data-table tr:hover td { background: var(--surface-2); }
+    .data-table .num { font-family: var(--font-mono); font-size: 12px; }
+    .data-table .positive { color: var(--success); }
+    .data-table .negative { color: var(--error); }
+    .data-table .emp-name { font-weight: 600; }
+    .data-table tfoot td { background: var(--surface-2); font-weight: 600; border-top: 1px solid var(--border); }
+
+    /* ── RANK BADGE ── */
+    .rank { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; font-size: 11px; font-weight: 700; }
+    .rank-1 { background: var(--gold-bg); color: var(--gold); }
+    .rank-2 { background: var(--surface-2); color: var(--muted); }
+    .rank-3 { background: var(--warning-bg); color: var(--warning); }
+
+    /* ── PROGRESS BAR ── */
+    .progress-bar { height: 4px; background: var(--surface-2); border-radius: 999px; overflow: hidden; margin-top: 6px; }
+    .progress-fill { height: 100%; border-radius: 999px; background: var(--primary); transition: width 0.6s ease; }
+    .progress-fill.neg { background: var(--error); }
+
+    /* ── STAT CARD ── */
+    .stat-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 16px 18px;
+      display: flex; flex-direction: column; gap: 10px;
+    }
+    .stat-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .stat-name { font-size: 14px; font-weight: 600; }
+    .stat-deals { font-size: 11px; color: var(--muted); font-family: var(--font-mono); }
+    .stat-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .stat-metric { }
+    .stat-metric-label { font-size: 10px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 2px; }
+    .stat-metric-value { font-family: var(--font-mono); font-size: 13px; font-weight: 600; }
+    .stat-metric-value.pos { color: var(--success); }
+    .stat-metric-value.neg { color: var(--error); }
+
+    /* ── CHART ── */
+    .chart-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 20px;
+    }
+    .chart-title { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 16px; }
+    .chart-wrap { position: relative; height: 220px; }
+
+    /* ── TWO COL ── */
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 760px) { .two-col { grid-template-columns: 1fr; } }
+
+    /* ── TOP 3 ── */
+    .top3 { display: flex; flex-direction: column; gap: 10px; }
+    .top3-item { display: flex; align-items: center; gap: 10px; }
+    .top3-info { flex: 1; }
+    .top3-name { font-size: 13px; font-weight: 600; }
+    .top3-val { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+    .top3-val.pos { color: var(--success); }
+    .top3-val.neg { color: var(--error); }
+
+    /* ── LOADING ── */
+    .loading-overlay {
+      position: fixed; inset: 0; background: var(--bg);
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+      z-index: 1000;
+    }
+    .spinner { width: 36px; height: 36px; border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.8s linear infinite; }
+    .loading-text { font-size: 13px; color: var(--muted); }
+    .loading-overlay.hidden { display: none; }
+
+    /* ── ERROR ── */
+    .error-banner {
+      background: var(--error-bg); border: 1px solid var(--error);
+      border-radius: var(--radius-sm); padding: 12px 16px;
+      font-size: 13px; color: var(--error); margin-bottom: 16px; display: none;
+    }
+    .error-banner.visible { display: block; }
+
+    @media (max-width: 640px) {
+      .header { padding: 0 14px; }
+      .main { padding: 14px; }
+      .tabs { padding: 0 14px; overflow-x: auto; }
+      .kpi-grid { grid-template-columns: 1fr 1fr; }
+      .last-updated { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Loading overlay -->
+<div class="loading-overlay" id="loading">
+  <div class="spinner"></div>
+  <div class="loading-text">Загружаем данные...</div>
+</div>
+
+<div class="app">
+  <!-- Header -->
+  <header class="header">
+    <div class="header-left">
+      <div class="logo">
+        <div class="logo-icon">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+          </svg>
+        </div>
+        <div class="logo-text">P2P <span>Tracker</span></div>
+      </div>
+      <div class="week-badge" id="weekLabel">—</div>
+    </div>
+    <div class="header-right">
+      <div class="last-updated" id="lastUpdated"></div>
+      <button class="refresh-btn" id="refreshBtn" onclick="loadData()">
+        <svg id="refreshIcon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>
+        </svg>
+        Обновить
+      </button>
+      <button class="theme-btn" data-theme-toggle aria-label="Сменить тему">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Tabs -->
+  <nav class="tabs">
+    <button class="tab active" onclick="switchTab('dashboard', this)">Дашборд</button>
+    <button class="tab" onclick="switchTab('employees', this)">Сотрудники</button>
+    <button class="tab" onclick="switchTab('companies', this)">Компании</button>
+  </nav>
+
+  <!-- Main -->
+  <main class="main">
+    <div class="error-banner" id="errorBanner"></div>
+
+    <!-- ═══ DASHBOARD PAGE ═══ -->
+    <div class="page active" id="page-dashboard">
+
+      <!-- KPIs -->
+      <div class="kpi-grid" id="kpiGrid">
+        <div class="kpi-card"><div class="kpi-label">Всего сделок</div><div class="kpi-value accent" id="kpi-total">—</div><div class="kpi-sub">за неделю</div></div>
+        <div class="kpi-card"><div class="kpi-label">Завершено</div><div class="kpi-value neutral" id="kpi-done">—</div><div class="kpi-sub">с данными</div></div>
+        <div class="kpi-card"><div class="kpi-label">Оборот ₽</div><div class="kpi-value neutral" id="kpi-vol">—</div><div class="kpi-sub">общий</div></div>
+        <div class="kpi-card"><div class="kpi-label">Прибыль USDT</div><div class="kpi-value" id="kpi-profit-usdt">—</div><div class="kpi-sub" id="kpi-profit-rub">—</div></div>
+        <div class="kpi-card"><div class="kpi-label">К выплате ₽</div><div class="kpi-value" id="kpi-payout">—</div><div class="kpi-sub">сотрудникам</div></div>
+        <div class="kpi-card"><div class="kpi-label">Ср. прибыль/сделка</div><div class="kpi-value" id="kpi-avg">—</div><div class="kpi-sub">USDT</div></div>
+      </div>
+
+      <div class="two-col">
+        <!-- Топ-3 сотрудников -->
+        <div class="chart-card">
+          <div class="chart-title">Топ по прибыли USDT</div>
+          <div class="top3" id="top3List"></div>
+        </div>
+
+        <!-- Сделки по сотрудникам — мини бар -->
+        <div class="chart-card">
+          <div class="chart-title">Сделки по сотрудникам</div>
+          <div class="chart-wrap"><canvas id="chartEmployees"></canvas></div>
+        </div>
+      </div>
+
+      <div style="height:16px"></div>
+
+      <!-- Результаты по сотрудникам -->
+      <div class="section">
+        <div class="section-title">Результаты по сотрудникам</div>
+        <div class="data-table table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Сотрудник</th>
+                <th>Сделок</th>
+                <th>Оборот ₽</th>
+                <th>Прибыль USDT</th>
+                <th>Прибыль ₽</th>
+                <th>Доля сотр. ₽</th>
+                <th>К выплате ₽</th>
+                <th>Доля %</th>
+              </tr>
+            </thead>
+            <tbody id="empTableBody"></tbody>
+            <tfoot id="empTableFoot"></tfoot>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ═══ EMPLOYEES PAGE ═══ -->
+    <div class="page" id="page-employees">
+      <div class="section">
+        <div class="section-title">Статистика по сотрудникам</div>
+        <div class="cards-grid" id="empCards"></div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Полная таблица</div>
+        <div class="data-table table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Сотрудник</th>
+                <th>Сделок</th>
+                <th>Оборот ₽</th>
+                <th>Прибыль USDT</th>
+                <th>Прибыль ₽</th>
+                <th>Ср./сделку</th>
+                <th>Доля сотр. ₽</th>
+                <th>Лучший день</th>
+                <th>Заморозок</th>
+              </tr>
+            </thead>
+            <tbody id="statsTableBody"></tbody>
+            <tfoot id="statsTableFoot"></tfoot>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ COMPANIES PAGE ═══ -->
+    <div class="page" id="page-companies">
+      <div class="section">
+        <div class="section-title">Компании-реквизитчики</div>
+        <div class="data-table table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Компания</th>
+                <th>Сделок</th>
+                <th>Оборот ₽</th>
+                <th>Прибыль USDT</th>
+                <th>Прибыль ₽</th>
+                <th>Ср. прибыль</th>
+                <th>Доля %</th>
+              </tr>
+            </thead>
+            <tbody id="reqTableBody"></tbody>
+            <tfoot id="reqTableFoot"></tfoot>
+          </table>
+        </div>
+      </div>
+
+      <div style="height:20px"></div>
+
+      <div class="section">
+        <div class="section-title">Компании продажи USDT</div>
+        <div class="data-table table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Компания</th>
+                <th>Сделок</th>
+                <th>Оборот ₽</th>
+                <th>Прибыль USDT</th>
+                <th>Прибыль ₽</th>
+                <th>Ср. прибыль</th>
+                <th>Доля %</th>
+              </tr>
+            </thead>
+            <tbody id="sellTableBody"></tbody>
+            <tfoot id="sellTableFoot"></tfoot>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+// ── CONFIG ──
+const SHEET_ID = '1seeYLOclRodWmoth1eBSMds-vGhJrFH60lftRKpAKT4';
+const API_KEY  = 'AIzaSyCbKtqIU1izwrx9sLBK35ndTMFPnHa7J_k';
+const BASE     = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values`;
+
+// ── THEME ──
+(function(){
+  const t = document.querySelector('[data-theme-toggle]'), r = document.documentElement;
+  let d = matchMedia('(prefers-color-scheme:dark)').matches ? 'dark' : 'light';
+  r.setAttribute('data-theme', d);
+  t && t.addEventListener('click', () => {
+    d = d === 'dark' ? 'light' : 'dark';
+    r.setAttribute('data-theme', d);
+    t.innerHTML = d === 'dark'
+      ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>'
+      : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+    if (window.empChart) updateChartColors();
+  });
+})();
+
+// ── TABS ──
+function switchTab(id, btn) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('page-' + id).classList.add('active');
+}
+
+// ── HELPERS ──
+function parseNum(s) {
+  if (!s && s !== 0) return null;
+  return parseFloat(String(s).replace(/\s/g,'').replace(',','.').replace('%','')) || 0;
+}
+function fmtNum(n, dec=2) {
+  if (n === null || n === undefined) return '—';
+  return n.toLocaleString('ru-RU', {minimumFractionDigits: dec, maximumFractionDigits: dec});
+}
+function fmtSign(n, dec=2) {
+  if (n === null || n === undefined) return '—';
+  return (n >= 0 ? '+' : '') + fmtNum(n, dec);
+}
+function profitClass(n) {
+  if (n === null || n === 0) return 'neutral';
+  return n > 0 ? 'positive' : 'negative';
+}
+
+// ── CHART ──
+let empChart = null;
+function buildEmployeeChart(employees) {
+  const ctx = document.getElementById('chartEmployees').getContext('2d');
+  const active = employees.filter(e => e.deals > 0);
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  const gridColor = isDark ? '#262523' : '#dcd9d5';
+  const textColor = isDark ? '#797876' : '#7a7974';
+
+  if (empChart) empChart.destroy();
+  empChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: active.map(e => e.name),
+      datasets: [{
+        data: active.map(e => e.deals),
+        backgroundColor: active.map(e => e.profit >= 0 ? 'rgba(109,170,69,0.7)' : 'rgba(209,99,167,0.7)'),
+        borderRadius: 4,
+        borderSkipped: false,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: textColor, font: { size: 11 } }, grid: { display: false } },
+        y: { ticks: { color: textColor, font: { size: 11 } }, grid: { color: gridColor } }
+      }
+    }
+  });
+  window.empChart = empChart;
+}
+function updateChartColors() {
+  if (!empChart) return;
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  empChart.options.scales.x.ticks.color = isDark ? '#797876' : '#7a7974';
+  empChart.options.scales.y.ticks.color = isDark ? '#797876' : '#7a7974';
+  empChart.options.scales.y.grid.color = isDark ? '#262523' : '#dcd9d5';
+  empChart.update();
+}
+
+// ── RENDER ──
+function renderDashboard(dash, stats) {
+  // KPIs
+  const total = parseNum(dash[4][1]);
+  const done  = parseNum(dash[4][3]);
+  const vol   = parseNum(dash[4][5]);
+  const profU = parseNum(dash[4][7]);
+  const profR = parseNum(dash[4][9]);
+  const payR  = parseNum(dash[4][11]);
+  const avg   = done > 0 ? profU / done : 0;
+
+  document.getElementById('kpi-total').textContent    = fmtNum(total, 0);
+  document.getElementById('kpi-done').textContent     = fmtNum(done, 0);
+  document.getElementById('kpi-vol').textContent      = fmtNum(vol, 0) + ' ₽';
+  const profUEl = document.getElementById('kpi-profit-usdt');
+  profUEl.textContent = fmtSign(profU) + ' ₮';
+  profUEl.className = 'kpi-value ' + profitClass(profU);
+  document.getElementById('kpi-profit-rub').textContent = fmtSign(profR, 0) + ' ₽';
+  const payEl = document.getElementById('kpi-payout');
+  payEl.textContent = fmtNum(payR, 0) + ' ₽';
+  payEl.className = 'kpi-value ' + profitClass(payR);
+  const avgEl = document.getElementById('kpi-avg');
+  avgEl.textContent = fmtSign(avg) + ' ₮';
+  avgEl.className = 'kpi-value ' + profitClass(avg);
+
+  // Week label
+  document.getElementById('weekLabel').textContent = dash[2] && dash[2][2] ? dash[2][2] : '—';
+
+  // Employees table (from dash rows 40+)
+  const empRows = [];
+  for (let i = 40; i < dash.length; i++) {
+    const r = dash[i];
+    if (!r || !r[1] || r[1] === '' || r[1] === 'ИТОГО' || r[1] === 'Сотрудник') continue;
+    const deals = parseNum(r[2]);
+    if (deals === 0 && !r[1]) continue;
+    empRows.push({
+      name: r[1], deals: deals || 0,
+      vol: parseNum(r[3]), profit: parseNum(r[4]),
+      profRub: parseNum(r[5]), share: parseNum(r[6]),
+      paid: parseNum(r[7]), toPay: parseNum(r[8]),
+      pct: r[9] || '—'
+    });
+  }
+  // итого из dash
+  let totRow = null;
+  for (let i = 40; i < dash.length; i++) {
+    if (dash[i] && dash[i][1] === 'ИТОГО') { totRow = dash[i]; break; }
+  }
+
+  const tbody = document.getElementById('empTableBody');
+  tbody.innerHTML = empRows.filter(e => e.deals > 0 || e.name).map(e => `
+    <tr>
+      <td class="emp-name">${e.name}</td>
+      <td class="num">${fmtNum(e.deals,0)}</td>
+      <td class="num">${fmtNum(e.vol,0)} ₽</td>
+      <td class="num ${profitClass(e.profit)}">${fmtSign(e.profit)} ₮</td>
+      <td class="num ${profitClass(e.profRub)}">${fmtSign(e.profRub,0)} ₽</td>
+      <td class="num">${fmtNum(e.share,0)} ₽</td>
+      <td class="num ${profitClass(e.toPay)}">${fmtNum(e.toPay,0)} ₽</td>
+      <td class="num">${e.pct}</td>
+    </tr>`).join('');
+
+  if (totRow) {
+    document.getElementById('empTableFoot').innerHTML = `<tr>
+      <td>ИТОГО</td>
+      <td class="num">${totRow[2]}</td>
+      <td class="num">${fmtNum(parseNum(totRow[3]),0)} ₽</td>
+      <td class="num ${profitClass(parseNum(totRow[4]))}">${fmtSign(parseNum(totRow[4]))} ₮</td>
+      <td class="num ${profitClass(parseNum(totRow[5]))}">${fmtSign(parseNum(totRow[5]),0)} ₽</td>
+      <td class="num">${fmtNum(parseNum(totRow[6]),0)} ₽</td>
+      <td class="num">${fmtNum(parseNum(totRow[8]),0)} ₽</td>
+      <td></td>
+    </tr>`;
+  }
+
+  // Chart
+  buildEmployeeChart(empRows.filter(e => e.deals > 0));
+
+  // Top 3
+  const top3 = [...empRows].filter(e => e.deals > 0).sort((a,b) => b.profit - a.profit).slice(0,3);
+  document.getElementById('top3List').innerHTML = top3.map((e, i) => `
+    <div class="top3-item">
+      <span class="rank rank-${i+1}">${i+1}</span>
+      <div class="top3-info">
+        <div class="top3-name">${e.name}</div>
+        <div class="top3-val ${profitClass(e.profit)}">${fmtSign(e.profit)} ₮ &nbsp;·&nbsp; ${fmtNum(e.deals,0)} сделок</div>
+      </div>
+    </div>`).join('');
+
+  // Companies
+  const reqRows = [], sellRows = [];
+  let reqSect = false, sellSect = false, reqTot = null, sellTot = null;
+  for (let i = 9; i < dash.length; i++) {
+    const r = dash[i];
+    if (!r) continue;
+    if (r[1] === 'Компании-реквизитчики (откуда реквизиты)') { reqSect=true; sellSect=false; continue; }
+    if (r[1] === 'Компании продажи USDT (кому продаём)') { sellSect=true; reqSect=false; continue; }
+    if (r[1] === 'Результаты по сотрудникам') { reqSect=false; sellSect=false; }
+    if ((r[1]==='Компания')||(r[1]==='Сотрудник')) continue;
+    if (!r[1] || r[1]==='') continue;
+    const row = {
+      name: r[1], deals: parseNum(r[2]), vol: parseNum(r[3]),
+      profit: parseNum(r[4]), profRub: parseNum(r[5]),
+      avg: parseNum(r[6]), pct: r[7]
+    };
+    if (r[1]==='ИТОГО') {
+      if (reqSect || (!sellSect && reqRows.length>0)) reqTot=row;
+      else if (sellSect) sellTot=row;
+    } else {
+      if (reqSect) reqRows.push(row);
+      else if (sellSect) sellRows.push(row);
+    }
+  }
+
+  function renderCompTable(tbodyId, tfootId, rows, tot) {
+    document.getElementById(tbodyId).innerHTML = rows.filter(r=>r.name&&r.deals>=0).map(r=>`
+      <tr>
+        <td class="emp-name">${r.name}</td>
+        <td class="num">${fmtNum(r.deals,0)}</td>
+        <td class="num">${fmtNum(r.vol,0)} ₽</td>
+        <td class="num ${profitClass(r.profit)}">${fmtSign(r.profit)} ₮</td>
+        <td class="num ${profitClass(r.profRub)}">${fmtSign(r.profRub,0)} ₽</td>
+        <td class="num">${fmtNum(r.avg)} ₮</td>
+        <td class="num">${r.pct||'—'}</td>
+      </tr>`).join('');
+    if (tot) document.getElementById(tfootId).innerHTML = `<tr>
+      <td>ИТОГО</td><td class="num">${fmtNum(tot.deals,0)}</td>
+      <td class="num">${fmtNum(tot.vol,0)} ₽</td>
+      <td class="num ${profitClass(tot.profit)}">${fmtSign(tot.profit)} ₮</td>
+      <td class="num ${profitClass(tot.profRub)}">${fmtSign(tot.profRub,0)} ₽</td>
+      <td class="num">${fmtNum(tot.avg)} ₮</td><td></td></tr>`;
+  }
+  renderCompTable('reqTableBody','reqTableFoot', reqRows, reqTot);
+  renderCompTable('sellTableBody','sellTableFoot', sellRows, sellTot);
+
+  // Stats page
+  renderStats(stats);
+}
+
+function renderStats(stats) {
+  // Stats rows: from row 6 onwards
+  const rows = [];
+  let totRow = null;
+  for (let i = 6; i < stats.length; i++) {
+    const r = stats[i];
+    if (!r || !r[1]) continue;
+    if (r[1] === 'ИТОГО') { totRow = r; continue; }
+    if (r[1] === '' || r[1] === 'Сотрудник') continue;
+    rows.push({
+      name: r[1], deals: parseNum(r[2]), vol: parseNum(r[3]),
+      profit: parseNum(r[4]), profRub: parseNum(r[5]),
+      avg: parseNum(r[6]), share: parseNum(r[7]),
+      bestDay: r[8]||'—', freezes: parseNum(r[9])
+    });
+  }
+
+  // Cards
+  const active = rows.filter(e => e.deals > 0);
+  const maxDeals = Math.max(...active.map(e=>e.deals), 1);
+  document.getElementById('empCards').innerHTML = active.map(e => {
+    const pct = Math.abs(e.deals/maxDeals*100).toFixed(0);
+    return `
+    <div class="stat-card">
+      <div class="stat-header">
+        <span class="stat-name">${e.name}</span>
+        <span class="stat-deals">${fmtNum(e.deals,0)} сделок</span>
+      </div>
+      <div class="progress-bar"><div class="progress-fill ${e.profit<0?'neg':''}" style="width:${pct}%"></div></div>
+      <div class="stat-metrics">
+        <div class="stat-metric">
+          <div class="stat-metric-label">Прибыль USDT</div>
+          <div class="stat-metric-value ${e.profit>=0?'pos':'neg'}">${fmtSign(e.profit)} ₮</div>
+        </div>
+        <div class="stat-metric">
+          <div class="stat-metric-label">Прибыль ₽</div>
+          <div class="stat-metric-value ${e.profRub>=0?'pos':'neg'}">${fmtSign(e.profRub,0)} ₽</div>
+        </div>
+        <div class="stat-metric">
+          <div class="stat-metric-label">Оборот ₽</div>
+          <div class="stat-metric-value">${fmtNum(e.vol,0)}</div>
+        </div>
+        <div class="stat-metric">
+          <div class="stat-metric-label">Ср./сделку</div>
+          <div class="stat-metric-value ${e.avg>=0?'pos':'neg'}">${fmtSign(e.avg)} ₮</div>
+        </div>
+        <div class="stat-metric">
+          <div class="stat-metric-label">Лучший день</div>
+          <div class="stat-metric-value">${e.bestDay}</div>
+        </div>
+        <div class="stat-metric">
+          <div class="stat-metric-label">Заморозок</div>
+          <div class="stat-metric-value">${fmtNum(e.freezes,0)}</div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  // Stats table
+  document.getElementById('statsTableBody').innerHTML = rows.filter(e=>e.deals>0).map(e=>`
+    <tr>
+      <td class="emp-name">${e.name}</td>
+      <td class="num">${fmtNum(e.deals,0)}</td>
+      <td class="num">${fmtNum(e.vol,0)} ₽</td>
+      <td class="num ${profitClass(e.profit)}">${fmtSign(e.profit)} ₮</td>
+      <td class="num ${profitClass(e.profRub)}">${fmtSign(e.profRub,0)} ₽</td>
+      <td class="num ${profitClass(e.avg)}">${fmtSign(e.avg)} ₮</td>
+      <td class="num">${fmtNum(e.share,0)} ₽</td>
+      <td>${e.bestDay}</td>
+      <td class="num">${fmtNum(e.freezes,0)}</td>
+    </tr>`).join('');
+
+  if (totRow) {
+    document.getElementById('statsTableFoot').innerHTML = `<tr>
+      <td>ИТОГО</td>
+      <td class="num">${totRow[2]}</td>
+      <td class="num">${fmtNum(parseNum(totRow[3]),0)} ₽</td>
+      <td class="num ${profitClass(parseNum(totRow[4]))}">${fmtSign(parseNum(totRow[4]))} ₮</td>
+      <td class="num ${profitClass(parseNum(totRow[5]))}">${fmtSign(parseNum(totRow[5]),0)} ₽</td>
+      <td class="num ${profitClass(parseNum(totRow[6]))}">${fmtSign(parseNum(totRow[6]))} ₮</td>
+      <td class="num">${fmtNum(parseNum(totRow[7]),0)} ₽</td>
+      <td>${totRow[8]||'—'}</td>
+      <td class="num">${totRow[9]||0}</td>
+    </tr>`;
+  }
+}
+
+// ── DATA LOADING ──
+async function loadData() {
+  const btn = document.getElementById('refreshBtn');
+  const icon = document.getElementById('refreshIcon');
+  btn.classList.add('loading');
+
+  try {
+    const [dashRes, statsRes] = await Promise.all([
+      fetch(`${BASE}/Dashboard!A1:M60?key=${API_KEY}`),
+      fetch(`${BASE}/Stats!A1:P60?key=${API_KEY}`)
+    ]);
+
+    if (!dashRes.ok || !statsRes.ok) throw new Error('Ошибка доступа к таблице');
+
+    const dashJson  = await dashRes.json();
+    const statsJson = await statsRes.json();
+
+    const dash  = dashJson.values  || [];
+    const stats = statsJson.values || [];
+
+    renderDashboard(dash, stats);
+
+    const now = new Date();
+    document.getElementById('lastUpdated').textContent =
+      'Обновлено: ' + now.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
+
+    document.getElementById('errorBanner').classList.remove('visible');
+
+  } catch(err) {
+    const banner = document.getElementById('errorBanner');
+    banner.textContent = 'Не удалось загрузить данные: ' + err.message + '. Проверьте API-ключ в настройках.';
+    banner.classList.add('visible');
+  } finally {
+    btn.classList.remove('loading');
+    document.getElementById('loading').classList.add('hidden');
+  }
+}
+
+// ── INIT ──
+window.addEventListener('DOMContentLoaded', loadData);
+// Авто-обновление каждые 5 минут
+setInterval(loadData, 5 * 60 * 1000);
+</script>
+</body>
+</html>
