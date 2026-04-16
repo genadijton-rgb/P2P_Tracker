@@ -538,19 +538,18 @@ function profitClass(n) {
 
 // ── COMPUTE FROM JOURNAL ──
 // Журнал: A=ID площадки, B=ID сервиса, C=Дата, D=₽ получили, E=USDT отдали,
-//         F=Токен, G=Заморозка, H=Исполнитель, I=Комп.продажи,
+//         F=Токен(комп.рекв), G=Заморозка, H=Исполнитель, I=Комп.продажи,
 //         J=USDT получили, K=₽ отдали, L=Спред%, M=Прибыль USDT,
-//         N=Курс, O=Компания
-// Строки данных начинаются с индекса 1 (индекс 0 — заголовок)
+//         N=Курс, O=Комментарий
+// Строка 0 — «Наш Гарант», строка 1 — заголовки, данные с индекса 2
 function computeFromJournal(rows, onlyDone) {
   const empMap = {};
   const compMap = {};
 
   let totalDeals = 0, doneDeals = 0;
   let totalVol = 0, totalProfit = 0, totalProfitRub = 0;
-  let totalPayout = 0;
 
-  for (let i = 1; i < rows.length; i++) {
+  for (let i = 2; i < rows.length; i++) {
     const r = rows[i];
     if (!r || r.length < 2) continue;
     const idService = r[1]; // B — ID сервиса
@@ -562,12 +561,12 @@ function computeFromJournal(rows, onlyDone) {
 
     if (onlyDone && !isDone) continue;
 
-    const executor = r[7] || 'Неизвестно'; // H
+    const executor = r[7] || 'Неизвестно'; // H — Исполнитель
     const rub      = parseNum(r[3]) || 0;  // D — ₽ получили
     const profitU  = parseNum(r[12]) || 0; // M — Прибыль USDT
-    const shareRub = parseNum(r[10]) || 0; // K — ₽ отдали (доля сотрудника)
-    const freeze   = r[6] && r[6].toString().trim() !== '' && r[6].toString().trim() !== '0';
-    const company  = r[14] || r[0] || '—'; // O — компания (или A)
+    const shareRub = parseNum(r[10]) || 0; // K — ₽ отдали
+    const freeze   = r[6] && r[6].toString().trim() !== '' && r[6].toString().trim().toLowerCase() !== 'нет';
+    const company  = r[5] || '—'; // F — Токен/компания-реквизитчик (Kaya, WinWin, ARGOS…)
 
     // ── Курс для расчёта прибыли в ₽ ──
     const rate = parseNum(r[13]) || 1; // N — Курс
@@ -869,7 +868,7 @@ async function loadData() {
     const [dashRes, statsRes, journalRes] = await Promise.all([
       fetch(`${BASE}/Dashboard!A1:M60?key=${API_KEY}`),
       fetch(`${BASE}/Stats!A1:P60?key=${API_KEY}`),
-      fetch(`${BASE}/Журнал!A1:O2000?key=${API_KEY}`)
+      fetch(`${BASE}/Journal!A1:O2000?key=${API_KEY}`)
     ]);
 
     if (!dashRes.ok || !statsRes.ok || !journalRes.ok) throw new Error('Ошибка доступа к таблице');
