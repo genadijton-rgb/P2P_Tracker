@@ -85,6 +85,23 @@
     .theme-btn:hover { color: var(--text); border-color: var(--primary); }
     .last-updated { font-size: 11px; color: var(--faint); }
 
+    /* ── MODE TOGGLE ── */
+    .mode-toggle {
+      display: flex; align-items: center; gap: 0;
+      background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: 6px; overflow: hidden; flex-shrink: 0;
+    }
+    .mode-btn {
+      font-size: 12px; font-weight: 500; color: var(--muted);
+      padding: 5px 10px; transition: all 180ms ease;
+      border-right: 1px solid var(--border); white-space: nowrap;
+    }
+    .mode-btn:last-child { border-right: none; }
+    .mode-btn.active {
+      background: var(--primary); color: #fff; border-color: var(--primary);
+    }
+    .mode-btn:not(.active):hover { color: var(--text); }
+
     /* ── TABS ── */
     .tabs {
       display: flex; align-items: center; gap: 2px;
@@ -117,6 +134,20 @@
     .kpi-value.neutral { color: var(--text); }
     .kpi-value.accent { color: var(--primary); }
     .kpi-sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+    /* ── MODE NOTICE ── */
+    .mode-notice {
+      display: flex; align-items: center; gap: 8px;
+      background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: var(--radius-sm); padding: 8px 14px;
+      font-size: 12px; color: var(--muted);
+      margin-bottom: 16px;
+    }
+    .mode-notice .dot {
+      width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+    }
+    .mode-notice .dot.green { background: var(--success); }
+    .mode-notice .dot.orange { background: var(--warning); }
 
     /* ── SECTION ── */
     .section { margin-bottom: 24px; }
@@ -228,11 +259,13 @@
     .error-banner.visible { display: block; }
 
     @media (max-width: 640px) {
-      .header { padding: 0 14px; }
+      .header { padding: 0 14px; height: auto; min-height: 56px; flex-wrap: wrap; padding-top: 8px; padding-bottom: 8px; gap: 8px; }
       .main { padding: 14px; }
       .tabs { padding: 0 14px; overflow-x: auto; }
       .kpi-grid { grid-template-columns: 1fr 1fr; }
       .last-updated { display: none; }
+      .mode-toggle { order: 10; width: 100%; }
+      .mode-btn { flex: 1; text-align: center; }
     }
   </style>
 </head>
@@ -259,6 +292,11 @@
       <div class="week-badge" id="weekLabel">—</div>
     </div>
     <div class="header-right">
+      <!-- Переключатель режима -->
+      <div class="mode-toggle">
+        <button class="mode-btn active" id="modeAll" onclick="setMode('all')">Все сделки</button>
+        <button class="mode-btn" id="modeDone" onclick="setMode('done')">Завершённые</button>
+      </div>
       <div class="last-updated" id="lastUpdated"></div>
       <button class="refresh-btn" id="refreshBtn" onclick="loadData()">
         <svg id="refreshIcon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -286,9 +324,15 @@
     <!-- ═══ DASHBOARD PAGE ═══ -->
     <div class="page active" id="page-dashboard">
 
+      <!-- Mode notice -->
+      <div class="mode-notice" id="modeNotice">
+        <div class="dot green" id="modeNoticeDot"></div>
+        <span id="modeNoticeText">Показаны все сделки недели, включая незавершённые</span>
+      </div>
+
       <!-- KPIs -->
       <div class="kpi-grid" id="kpiGrid">
-        <div class="kpi-card"><div class="kpi-label">Всего сделок</div><div class="kpi-value accent" id="kpi-total">—</div><div class="kpi-sub">за неделю</div></div>
+        <div class="kpi-card"><div class="kpi-label">Всего сделок</div><div class="kpi-value accent" id="kpi-total">—</div><div class="kpi-sub" id="kpi-total-sub">за неделю</div></div>
         <div class="kpi-card"><div class="kpi-label">Завершено</div><div class="kpi-value neutral" id="kpi-done">—</div><div class="kpi-sub">с данными</div></div>
         <div class="kpi-card"><div class="kpi-label">Оборот ₽</div><div class="kpi-value neutral" id="kpi-vol">—</div><div class="kpi-sub">общий</div></div>
         <div class="kpi-card"><div class="kpi-label">Прибыль USDT</div><div class="kpi-value" id="kpi-profit-usdt">—</div><div class="kpi-sub" id="kpi-profit-rub">—</div></div>
@@ -424,6 +468,12 @@ const SHEET_ID = '1seeYLOclRodWmoth1eBSMds-vGhJrFH60lftRKpAKT4';
 const API_KEY  = 'AIzaSyCbKtqIU1izwrx9sLBK35ndTMFPnHa7J_k';
 const BASE     = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values`;
 
+// ── STATE ──
+let currentMode = 'all'; // 'all' | 'done'
+let cachedDash = null;
+let cachedStats = null;
+let cachedJournal = null;
+
 // ── THEME ──
 (function(){
   const t = document.querySelector('[data-theme-toggle]'), r = document.documentElement;
@@ -447,6 +497,27 @@ function switchTab(id, btn) {
   document.getElementById('page-' + id).classList.add('active');
 }
 
+// ── MODE SWITCH ──
+function setMode(mode) {
+  currentMode = mode;
+  document.getElementById('modeAll').classList.toggle('active', mode === 'all');
+  document.getElementById('modeDone').classList.toggle('active', mode === 'done');
+
+  const dot = document.getElementById('modeNoticeDot');
+  const txt = document.getElementById('modeNoticeText');
+  if (mode === 'all') {
+    dot.className = 'dot orange';
+    txt.textContent = 'Показаны все сделки, включая незавершённые — прибыль может быть занижена';
+  } else {
+    dot.className = 'dot green';
+    txt.textContent = 'Показаны только завершённые сделки (заполнен USDT получили) — реальная прибыль';
+  }
+
+  if (cachedDash && cachedStats && cachedJournal) {
+    renderAll();
+  }
+}
+
 // ── HELPERS ──
 function parseNum(s) {
   if (!s && s !== 0) return null;
@@ -463,6 +534,81 @@ function fmtSign(n, dec=2) {
 function profitClass(n) {
   if (n === null || n === 0) return 'neutral';
   return n > 0 ? 'positive' : 'negative';
+}
+
+// ── COMPUTE FROM JOURNAL ──
+// Журнал: A=ID площадки, B=ID сервиса, C=Дата, D=₽ получили, E=USDT отдали,
+//         F=Токен, G=Заморозка, H=Исполнитель, I=Комп.продажи,
+//         J=USDT получили, K=₽ отдали, L=Спред%, M=Прибыль USDT,
+//         N=Курс, O=Компания
+// Строки данных начинаются с индекса 1 (индекс 0 — заголовок)
+function computeFromJournal(rows, onlyDone) {
+  const empMap = {};
+  const compMap = {};
+
+  let totalDeals = 0, doneDeals = 0;
+  let totalVol = 0, totalProfit = 0, totalProfitRub = 0;
+  let totalPayout = 0;
+
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r || r.length < 2) continue;
+    const idService = r[1]; // B — ID сервиса
+    if (!idService || idService === '') continue;
+
+    const isDone = r[9] && r[9].toString().trim() !== ''; // J = USDT получили заполнен
+    totalDeals++;
+    if (isDone) doneDeals++;
+
+    if (onlyDone && !isDone) continue;
+
+    const executor = r[7] || 'Неизвестно'; // H
+    const rub      = parseNum(r[3]) || 0;  // D — ₽ получили
+    const profitU  = parseNum(r[12]) || 0; // M — Прибыль USDT
+    const shareRub = parseNum(r[10]) || 0; // K — ₽ отдали (доля сотрудника)
+    const freeze   = r[6] && r[6].toString().trim() !== '' && r[6].toString().trim() !== '0';
+    const company  = r[14] || r[0] || '—'; // O — компания (или A)
+
+    // ── Курс для расчёта прибыли в ₽ ──
+    const rate = parseNum(r[13]) || 1; // N — Курс
+    const profitRub = profitU * rate;
+
+    totalVol      += rub;
+    totalProfit   += profitU;
+    totalProfitRub+= profitRub;
+
+    // ── Исполнители ──
+    if (!empMap[executor]) empMap[executor] = { deals: 0, vol: 0, profit: 0, profRub: 0, shareRub: 0, freezes: 0 };
+    empMap[executor].deals++;
+    empMap[executor].vol     += rub;
+    empMap[executor].profit  += profitU;
+    empMap[executor].profRub += profitRub;
+    empMap[executor].shareRub+= shareRub;
+    if (freeze) empMap[executor].freezes++;
+
+    // ── Компании ──
+    if (!compMap[company]) compMap[company] = { deals: 0, vol: 0, profit: 0, profRub: 0 };
+    compMap[company].deals++;
+    compMap[company].vol    += rub;
+    compMap[company].profit += profitU;
+    compMap[company].profRub+= profitRub;
+  }
+
+  const empArr = Object.entries(empMap).map(([name, d]) => ({
+    name, deals: d.deals, vol: d.vol, profit: d.profit,
+    profRub: d.profRub, share: d.shareRub, freezes: d.freezes,
+    avg: d.deals > 0 ? d.profit / d.deals : 0
+  })).sort((a, b) => b.profit - a.profit);
+
+  const compArr = Object.entries(compMap).map(([name, d]) => ({
+    name, deals: d.deals, vol: d.vol, profit: d.profit, profRub: d.profRub,
+    avg: d.deals > 0 ? d.profit / d.deals : 0
+  })).sort((a, b) => b.profit - a.profit);
+
+  const displayDeals = onlyDone ? doneDeals : totalDeals;
+  const avgProfit = displayDeals > 0 ? totalProfit / displayDeals : 0;
+
+  return { totalDeals, doneDeals, displayDeals, totalVol, totalProfit, totalProfitRub, avgProfit, empArr, compArr };
 }
 
 // ── CHART ──
@@ -506,57 +652,54 @@ function updateChartColors() {
   empChart.update();
 }
 
-// ── RENDER ──
-function renderDashboard(dash, stats) {
-  // KPIs
-  const total = parseNum(dash[4][1]);
-  const done  = parseNum(dash[4][3]);
-  const vol   = parseNum(dash[4][5]);
-  const profU = parseNum(dash[4][7]);
-  const profR = parseNum(dash[4][9]);
-  const payR  = parseNum(dash[4][11]);
-  const avg   = done > 0 ? profU / done : 0;
+// ── RENDER ALL ──
+function renderAll() {
+  const onlyDone = currentMode === 'done';
+  const computed = computeFromJournal(cachedJournal, onlyDone);
 
-  document.getElementById('kpi-total').textContent    = fmtNum(total, 0);
-  document.getElementById('kpi-done').textContent     = fmtNum(done, 0);
-  document.getElementById('kpi-vol').textContent      = fmtNum(vol, 0) + ' ₽';
+  renderDashboardKPI(computed, cachedDash);
+  renderEmployeeTable(computed.empArr);
+  buildEmployeeChart(computed.empArr);
+  renderTop3(computed.empArr);
+  renderCompanyTables(computed.compArr);
+  renderStats(cachedStats, computed.empArr);
+}
+
+// ── RENDER KPI ──
+function renderDashboardKPI(c, dash) {
+  document.getElementById('kpi-total').textContent  = fmtNum(c.totalDeals, 0);
+  document.getElementById('kpi-done').textContent   = fmtNum(c.doneDeals, 0);
+  document.getElementById('kpi-vol').textContent    = fmtNum(c.totalVol, 0) + ' ₽';
+
   const profUEl = document.getElementById('kpi-profit-usdt');
-  profUEl.textContent = fmtSign(profU) + ' ₮';
-  profUEl.className = 'kpi-value ' + profitClass(profU);
-  document.getElementById('kpi-profit-rub').textContent = fmtSign(profR, 0) + ' ₽';
+  profUEl.textContent = fmtSign(c.totalProfit) + ' ₮';
+  profUEl.className = 'kpi-value ' + profitClass(c.totalProfit);
+  document.getElementById('kpi-profit-rub').textContent = fmtSign(c.totalProfitRub, 0) + ' ₽';
+
+  // Выплата — берём из Dashboard sheet (не меняется от режима, это план)
+  let payR = null;
+  if (dash && dash[4]) payR = parseNum(dash[4][11]);
   const payEl = document.getElementById('kpi-payout');
-  payEl.textContent = fmtNum(payR, 0) + ' ₽';
+  payEl.textContent = payR !== null ? fmtNum(payR, 0) + ' ₽' : '—';
   payEl.className = 'kpi-value ' + profitClass(payR);
+
   const avgEl = document.getElementById('kpi-avg');
-  avgEl.textContent = fmtSign(avg) + ' ₮';
-  avgEl.className = 'kpi-value ' + profitClass(avg);
+  avgEl.textContent = fmtSign(c.avgProfit) + ' ₮';
+  avgEl.className = 'kpi-value ' + profitClass(c.avgProfit);
 
   // Week label
-  document.getElementById('weekLabel').textContent = dash[2] && dash[2][2] ? dash[2][2] : '—';
-
-  // Employees table (from dash rows 40+)
-  const empRows = [];
-  for (let i = 40; i < dash.length; i++) {
-    const r = dash[i];
-    if (!r || !r[1] || r[1] === '' || r[1] === 'ИТОГО' || r[1] === 'Сотрудник') continue;
-    const deals = parseNum(r[2]);
-    if (deals === 0 && !r[1]) continue;
-    empRows.push({
-      name: r[1], deals: deals || 0,
-      vol: parseNum(r[3]), profit: parseNum(r[4]),
-      profRub: parseNum(r[5]), share: parseNum(r[6]),
-      paid: parseNum(r[7]), toPay: parseNum(r[8]),
-      pct: r[9] || '—'
-    });
+  if (dash && dash[2] && dash[2][2]) {
+    document.getElementById('weekLabel').textContent = dash[2][2];
   }
-  // итого из dash
-  let totRow = null;
-  for (let i = 40; i < dash.length; i++) {
-    if (dash[i] && dash[i][1] === 'ИТОГО') { totRow = dash[i]; break; }
-  }
+}
 
+// ── RENDER EMPLOYEE TABLE ──
+function renderEmployeeTable(empArr) {
   const tbody = document.getElementById('empTableBody');
-  tbody.innerHTML = empRows.filter(e => e.deals > 0 || e.name).map(e => `
+  const tfoot = document.getElementById('empTableFoot');
+
+  const active = empArr.filter(e => e.deals > 0);
+  tbody.innerHTML = active.map(e => `
     <tr>
       <td class="emp-name">${e.name}</td>
       <td class="num">${fmtNum(e.deals,0)}</td>
@@ -564,28 +707,27 @@ function renderDashboard(dash, stats) {
       <td class="num ${profitClass(e.profit)}">${fmtSign(e.profit)} ₮</td>
       <td class="num ${profitClass(e.profRub)}">${fmtSign(e.profRub,0)} ₽</td>
       <td class="num">${fmtNum(e.share,0)} ₽</td>
-      <td class="num ${profitClass(e.toPay)}">${fmtNum(e.toPay,0)} ₽</td>
-      <td class="num">${e.pct}</td>
+      <td class="num">—</td>
+      <td class="num">—</td>
     </tr>`).join('');
 
-  if (totRow) {
-    document.getElementById('empTableFoot').innerHTML = `<tr>
-      <td>ИТОГО</td>
-      <td class="num">${totRow[2]}</td>
-      <td class="num">${fmtNum(parseNum(totRow[3]),0)} ₽</td>
-      <td class="num ${profitClass(parseNum(totRow[4]))}">${fmtSign(parseNum(totRow[4]))} ₮</td>
-      <td class="num ${profitClass(parseNum(totRow[5]))}">${fmtSign(parseNum(totRow[5]),0)} ₽</td>
-      <td class="num">${fmtNum(parseNum(totRow[6]),0)} ₽</td>
-      <td class="num">${fmtNum(parseNum(totRow[8]),0)} ₽</td>
-      <td></td>
-    </tr>`;
-  }
+  const totDeals  = active.reduce((s,e)=>s+e.deals,0);
+  const totVol    = active.reduce((s,e)=>s+e.vol,0);
+  const totProfit = active.reduce((s,e)=>s+e.profit,0);
+  const totRub    = active.reduce((s,e)=>s+e.profRub,0);
+  tfoot.innerHTML = `<tr>
+    <td>ИТОГО</td>
+    <td class="num">${fmtNum(totDeals,0)}</td>
+    <td class="num">${fmtNum(totVol,0)} ₽</td>
+    <td class="num ${profitClass(totProfit)}">${fmtSign(totProfit)} ₮</td>
+    <td class="num ${profitClass(totRub)}">${fmtSign(totRub,0)} ₽</td>
+    <td class="num">—</td><td class="num">—</td><td></td>
+  </tr>`;
+}
 
-  // Chart
-  buildEmployeeChart(empRows.filter(e => e.deals > 0));
-
-  // Top 3
-  const top3 = [...empRows].filter(e => e.deals > 0).sort((a,b) => b.profit - a.profit).slice(0,3);
+// ── TOP 3 ──
+function renderTop3(empArr) {
+  const top3 = empArr.filter(e => e.deals > 0).slice(0, 3);
   document.getElementById('top3List').innerHTML = top3.map((e, i) => `
     <div class="top3-item">
       <span class="rank rank-${i+1}">${i+1}</span>
@@ -594,77 +736,51 @@ function renderDashboard(dash, stats) {
         <div class="top3-val ${profitClass(e.profit)}">${fmtSign(e.profit)} ₮ &nbsp;·&nbsp; ${fmtNum(e.deals,0)} сделок</div>
       </div>
     </div>`).join('');
-
-  // Companies
-  const reqRows = [], sellRows = [];
-  let reqSect = false, sellSect = false, reqTot = null, sellTot = null;
-  for (let i = 9; i < dash.length; i++) {
-    const r = dash[i];
-    if (!r) continue;
-    if (r[1] === 'Компании-реквизитчики (откуда реквизиты)') { reqSect=true; sellSect=false; continue; }
-    if (r[1] === 'Компании продажи USDT (кому продаём)') { sellSect=true; reqSect=false; continue; }
-    if (r[1] === 'Результаты по сотрудникам') { reqSect=false; sellSect=false; }
-    if ((r[1]==='Компания')||(r[1]==='Сотрудник')) continue;
-    if (!r[1] || r[1]==='') continue;
-    const row = {
-      name: r[1], deals: parseNum(r[2]), vol: parseNum(r[3]),
-      profit: parseNum(r[4]), profRub: parseNum(r[5]),
-      avg: parseNum(r[6]), pct: r[7]
-    };
-    if (r[1]==='ИТОГО') {
-      if (reqSect || (!sellSect && reqRows.length>0)) reqTot=row;
-      else if (sellSect) sellTot=row;
-    } else {
-      if (reqSect) reqRows.push(row);
-      else if (sellSect) sellRows.push(row);
-    }
-  }
-
-  function renderCompTable(tbodyId, tfootId, rows, tot) {
-    document.getElementById(tbodyId).innerHTML = rows.filter(r=>r.name&&r.deals>=0).map(r=>`
-      <tr>
-        <td class="emp-name">${r.name}</td>
-        <td class="num">${fmtNum(r.deals,0)}</td>
-        <td class="num">${fmtNum(r.vol,0)} ₽</td>
-        <td class="num ${profitClass(r.profit)}">${fmtSign(r.profit)} ₮</td>
-        <td class="num ${profitClass(r.profRub)}">${fmtSign(r.profRub,0)} ₽</td>
-        <td class="num">${fmtNum(r.avg)} ₮</td>
-        <td class="num">${r.pct||'—'}</td>
-      </tr>`).join('');
-    if (tot) document.getElementById(tfootId).innerHTML = `<tr>
-      <td>ИТОГО</td><td class="num">${fmtNum(tot.deals,0)}</td>
-      <td class="num">${fmtNum(tot.vol,0)} ₽</td>
-      <td class="num ${profitClass(tot.profit)}">${fmtSign(tot.profit)} ₮</td>
-      <td class="num ${profitClass(tot.profRub)}">${fmtSign(tot.profRub,0)} ₽</td>
-      <td class="num">${fmtNum(tot.avg)} ₮</td><td></td></tr>`;
-  }
-  renderCompTable('reqTableBody','reqTableFoot', reqRows, reqTot);
-  renderCompTable('sellTableBody','sellTableFoot', sellRows, sellTot);
-
-  // Stats page
-  renderStats(stats);
 }
 
-function renderStats(stats) {
-  // Stats rows: from row 6 onwards
-  const rows = [];
-  let totRow = null;
-  for (let i = 6; i < stats.length; i++) {
-    const r = stats[i];
-    if (!r || !r[1]) continue;
-    if (r[1] === 'ИТОГО') { totRow = r; continue; }
-    if (r[1] === '' || r[1] === 'Сотрудник') continue;
-    rows.push({
-      name: r[1], deals: parseNum(r[2]), vol: parseNum(r[3]),
-      profit: parseNum(r[4]), profRub: parseNum(r[5]),
-      avg: parseNum(r[6]), share: parseNum(r[7]),
-      bestDay: r[8]||'—', freezes: parseNum(r[9])
-    });
+// ── RENDER COMPANY TABLES ──
+function renderCompanyTables(compArr) {
+  const total = compArr.reduce((s,c)=>s+c.profit,0);
+
+  function mkRow(c) {
+    const pct = total !== 0 ? (c.profit/total*100).toFixed(1)+'%' : '—';
+    return `<tr>
+      <td class="emp-name">${c.name}</td>
+      <td class="num">${fmtNum(c.deals,0)}</td>
+      <td class="num">${fmtNum(c.vol,0)} ₽</td>
+      <td class="num ${profitClass(c.profit)}">${fmtSign(c.profit)} ₮</td>
+      <td class="num ${profitClass(c.profRub)}">${fmtSign(c.profRub,0)} ₽</td>
+      <td class="num">${fmtNum(c.avg)} ₮</td>
+      <td class="num">${pct}</td>
+    </tr>`;
   }
 
-  // Cards
-  const active = rows.filter(e => e.deals > 0);
+  const totDeals  = compArr.reduce((s,c)=>s+c.deals,0);
+  const totVol    = compArr.reduce((s,c)=>s+c.vol,0);
+  const totProfit = compArr.reduce((s,c)=>s+c.profit,0);
+  const totRub    = compArr.reduce((s,c)=>s+c.profRub,0);
+  const totAvg    = totDeals > 0 ? totProfit / totDeals : 0;
+  const footHtml  = `<tr>
+    <td>ИТОГО</td><td class="num">${fmtNum(totDeals,0)}</td>
+    <td class="num">${fmtNum(totVol,0)} ₽</td>
+    <td class="num ${profitClass(totProfit)}">${fmtSign(totProfit)} ₮</td>
+    <td class="num ${profitClass(totRub)}">${fmtSign(totRub,0)} ₽</td>
+    <td class="num">${fmtNum(totAvg)} ₮</td><td></td>
+  </tr>`;
+
+  // Все компании идут в одну таблицу (реквизитчики)
+  document.getElementById('reqTableBody').innerHTML  = compArr.map(mkRow).join('');
+  document.getElementById('reqTableFoot').innerHTML  = footHtml;
+  document.getElementById('sellTableBody').innerHTML = '<tr><td colspan="7" style="color:var(--muted);text-align:center;padding:20px">Данные объединены в таблицу выше</td></tr>';
+  document.getElementById('sellTableFoot').innerHTML = '';
+}
+
+// ── RENDER STATS PAGE ──
+function renderStats(stats, empArr) {
+  // Карточки берём из вычисленных данных (empArr)
+  const active = empArr.filter(e => e.deals > 0);
   const maxDeals = Math.max(...active.map(e=>e.deals), 1);
+
   document.getElementById('empCards').innerHTML = active.map(e => {
     const pct = Math.abs(e.deals/maxDeals*100).toFixed(0);
     return `
@@ -692,10 +808,6 @@ function renderStats(stats) {
           <div class="stat-metric-value ${e.avg>=0?'pos':'neg'}">${fmtSign(e.avg)} ₮</div>
         </div>
         <div class="stat-metric">
-          <div class="stat-metric-label">Лучший день</div>
-          <div class="stat-metric-value">${e.bestDay}</div>
-        </div>
-        <div class="stat-metric">
           <div class="stat-metric-label">Заморозок</div>
           <div class="stat-metric-value">${fmtNum(e.freezes,0)}</div>
         </div>
@@ -703,7 +815,23 @@ function renderStats(stats) {
     </div>`;
   }).join('');
 
-  // Stats table
+  // Таблица stats — берём из Stats sheet (там детальнее, с лучшим днём)
+  if (!stats) return;
+  const rows = [];
+  let totRow = null;
+  for (let i = 6; i < stats.length; i++) {
+    const r = stats[i];
+    if (!r || !r[1]) continue;
+    if (r[1] === 'ИТОГО') { totRow = r; continue; }
+    if (r[1] === '' || r[1] === 'Сотрудник') continue;
+    rows.push({
+      name: r[1], deals: parseNum(r[2]), vol: parseNum(r[3]),
+      profit: parseNum(r[4]), profRub: parseNum(r[5]),
+      avg: parseNum(r[6]), share: parseNum(r[7]),
+      bestDay: r[8]||'—', freezes: parseNum(r[9])
+    });
+  }
+
   document.getElementById('statsTableBody').innerHTML = rows.filter(e=>e.deals>0).map(e=>`
     <tr>
       <td class="emp-name">${e.name}</td>
@@ -735,24 +863,26 @@ function renderStats(stats) {
 // ── DATA LOADING ──
 async function loadData() {
   const btn = document.getElementById('refreshBtn');
-  const icon = document.getElementById('refreshIcon');
   btn.classList.add('loading');
 
   try {
-    const [dashRes, statsRes] = await Promise.all([
+    const [dashRes, statsRes, journalRes] = await Promise.all([
       fetch(`${BASE}/Dashboard!A1:M60?key=${API_KEY}`),
-      fetch(`${BASE}/Stats!A1:P60?key=${API_KEY}`)
+      fetch(`${BASE}/Stats!A1:P60?key=${API_KEY}`),
+      fetch(`${BASE}/Журнал!A1:O2000?key=${API_KEY}`)
     ]);
 
-    if (!dashRes.ok || !statsRes.ok) throw new Error('Ошибка доступа к таблице');
+    if (!dashRes.ok || !statsRes.ok || !journalRes.ok) throw new Error('Ошибка доступа к таблице');
 
-    const dashJson  = await dashRes.json();
-    const statsJson = await statsRes.json();
+    const dashJson    = await dashRes.json();
+    const statsJson   = await statsRes.json();
+    const journalJson = await journalRes.json();
 
-    const dash  = dashJson.values  || [];
-    const stats = statsJson.values || [];
+    cachedDash    = dashJson.values    || [];
+    cachedStats   = statsJson.values   || [];
+    cachedJournal = journalJson.values || [];
 
-    renderDashboard(dash, stats);
+    renderAll();
 
     const now = new Date();
     document.getElementById('lastUpdated').textContent =
