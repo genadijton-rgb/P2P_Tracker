@@ -93,7 +93,7 @@
     }
     .mode-btn {
       font-size: 12px; font-weight: 500; color: var(--muted);
-      padding: 5px 10px; transition: all 180ms ease;
+      padding: 5px 12px; transition: all 180ms ease;
       border-right: 1px solid var(--border); white-space: nowrap;
     }
     .mode-btn:last-child { border-right: none; }
@@ -101,6 +101,13 @@
       background: var(--primary); color: #fff; border-color: var(--primary);
     }
     .mode-btn:not(.active):hover { color: var(--text); }
+
+    /* ── MODE BAR (above KPI on all screens) ── */
+    .mode-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 12px; margin-bottom: 16px;
+    }
+    .mode-bar .mode-toggle { flex-shrink: 0; }
 
     /* ── TABS ── */
     .tabs {
@@ -259,13 +266,15 @@
     .error-banner.visible { display: block; }
 
     @media (max-width: 640px) {
-      .header { padding: 0 14px; height: auto; min-height: 56px; flex-wrap: wrap; padding-top: 8px; padding-bottom: 8px; gap: 8px; }
+      .header { padding: 0 14px; }
       .main { padding: 14px; }
       .tabs { padding: 0 14px; overflow-x: auto; }
       .kpi-grid { grid-template-columns: 1fr 1fr; }
       .last-updated { display: none; }
-      .mode-toggle { order: 10; width: 100%; }
-      .mode-btn { flex: 1; text-align: center; }
+      .header .mode-toggle { display: none; }
+    }
+    @media (min-width: 641px) {
+      .mode-bar .mode-toggle { display: none; }
     }
   </style>
 </head>
@@ -324,10 +333,16 @@
     <!-- ═══ DASHBOARD PAGE ═══ -->
     <div class="page active" id="page-dashboard">
 
-      <!-- Mode notice -->
-      <div class="mode-notice" id="modeNotice">
-        <div class="dot green" id="modeNoticeDot"></div>
-        <span id="modeNoticeText">Показаны все сделки недели, включая незавершённые</span>
+      <!-- Mode bar -->
+      <div class="mode-bar">
+        <div class="mode-toggle" id="modeToggleMobile">
+          <button class="mode-btn active" id="modeBtnAll2" onclick="setMode('all')">Все сделки</button>
+          <button class="mode-btn" id="modeBtnDone2" onclick="setMode('done')">Завершённые</button>
+        </div>
+        <div class="mode-notice" id="modeNotice" style="margin:0;flex:1">
+          <div class="dot green" id="modeNoticeDot"></div>
+          <span id="modeNoticeText">Показаны все сделки недели, включая незавершённые</span>
+        </div>
       </div>
 
       <!-- KPIs -->
@@ -500,17 +515,21 @@ function switchTab(id, btn) {
 // ── MODE SWITCH ──
 function setMode(mode) {
   currentMode = mode;
+  // Хедер (desktop)
   document.getElementById('modeAll').classList.toggle('active', mode === 'all');
   document.getElementById('modeDone').classList.toggle('active', mode === 'done');
+  // Мобайльный (mode-bar)
+  document.getElementById('modeBtnAll2').classList.toggle('active', mode === 'all');
+  document.getElementById('modeBtnDone2').classList.toggle('active', mode === 'done');
 
   const dot = document.getElementById('modeNoticeDot');
   const txt = document.getElementById('modeNoticeText');
   if (mode === 'all') {
     dot.className = 'dot orange';
-    txt.textContent = 'Показаны все сделки, включая незавершённые — прибыль может быть занижена';
+    txt.textContent = 'Все сделки, включая незавершённые — прибыль может быть занижена';
   } else {
     dot.className = 'dot green';
-    txt.textContent = 'Показаны только завершённые сделки (заполнен USDT получили) — реальная прибыль';
+    txt.textContent = 'Только завершённые (USDT получили) — реальная прибыль';
   }
 
   if (cachedDash && cachedStats && cachedJournal) {
