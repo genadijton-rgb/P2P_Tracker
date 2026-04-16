@@ -324,6 +324,7 @@
     <button class="tab active" onclick="switchTab('dashboard', this)">Дашборд</button>
     <button class="tab" onclick="switchTab('employees', this)">Сотрудники</button>
     <button class="tab" onclick="switchTab('companies', this)">Компании</button>
+    <button class="tab" onclick="switchTab('rates', this)">Курс USD₽</button>
   </nav>
 
   <!-- Main -->
@@ -472,6 +473,58 @@
           </table>
         </div>
       </div>
+    </div>
+
+    <!-- ═══ RATES PAGE ═══ -->
+    <div class="page" id="page-rates">
+
+      <!-- Сравнение недель -->
+      <div class="section">
+        <div class="section-title">Сравнение с прошлой неделей</div>
+        <div class="kpi-grid" id="weekCompareGrid" style="margin-bottom:16px"></div>
+      </div>
+
+      <!-- График курса -->
+      <div class="section">
+        <div class="section-title">История курса USDT/RUB</div>
+        <div class="chart-card">
+          <div class="chart-title">Курс за неделю (из журнала)</div>
+          <div class="chart-wrap" style="height:280px"><canvas id="chartRates"></canvas></div>
+        </div>
+      </div>
+
+      <!-- Таблица курсов -->
+      <div class="section">
+        <div class="section-title">Данные по курсу</div>
+        <div class="kpi-grid">
+          <div class="kpi-card"><div class="kpi-label">Текущий курс</div><div class="kpi-value accent" id="rateCurrent">—</div><div class="kpi-sub">последняя сделка</div></div>
+          <div class="kpi-card"><div class="kpi-label">Минимальный</div><div class="kpi-value neutral" id="rateMin">—</div><div class="kpi-sub">за неделю</div></div>
+          <div class="kpi-card"><div class="kpi-label">Максимальный</div><div class="kpi-value neutral" id="rateMax">—</div><div class="kpi-sub">за неделю</div></div>
+          <div class="kpi-card"><div class="kpi-label">Средний</div><div class="kpi-value neutral" id="rateAvg">—</div><div class="kpi-sub">за неделю</div></div>
+        </div>
+      </div>
+
+      <!-- Таблица сделок по дням -->
+      <div class="section">
+        <div class="section-title">Сделки по дням</div>
+        <div class="data-table table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Дата</th>
+                <th>Сделок</th>
+                <th>Завершено</th>
+                <th>Оборот ₽</th>
+                <th>Прибыль ≈</th>
+                <th>Ср. курс</th>
+                <th>Ср. спред</th>
+              </tr>
+            </thead>
+            <tbody id="dailyTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
     </div>
 
   </main>
@@ -681,6 +734,7 @@ function renderAll() {
   renderTop3(computed.empArr);
   renderCompanyTables(computed.compArr);
   renderStats(cachedStats, computed.empArr);
+  renderRatesPage(cachedJournal, cachedDash);
 }
 
 // ── RENDER KPI ──
@@ -876,6 +930,158 @@ function renderStats(stats, empArr) {
       <td class="num">${totRow[9]||0}</td>
     </tr>`;
   }
+}
+
+// ── RATES & WEEK COMPARE ──
+let ratesChart = null;
+
+function renderRatesPage(journal, dash) {
+  // Собираем данные из журнала
+  const onlyDone = currentMode === 'done';
+  const rows = journal;
+  const dayMap = {};
+  const rates = [];
+
+  for (let i = 2; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r || !r[1] || r[1] === '') continue;
+    const isDone = r[9] && r[9].toString().trim() !== '';
+    if (onlyDone && !isDone) continue;
+
+    const dateStr = r[2] ? r[2].toString().trim() : '';
+    const dayKey = dateStr.length >= 10 ? dateStr.substring(0, 10) : dateStr;
+    const rate = parseNum(r[13]) || 0;
+    const rub  = parseNum(r[3])  || 0;
+    const profit = parseNum(r[12]) || 0;
+    const spreadRaw = r[11];
+    const spread = typeof spreadRaw === 'number' ? spreadRaw * 100 : parseFloat((spreadRaw||'').toString().replace('%','')) || 0;
+
+    if (!dayMap[dayKey]) dayMap[dayKey] = {total:0, done:0, vol:0, profit:0, rates:[], spreads:[]};
+    dayMap[dayKey].total++;
+    if (isDone) dayMap[dayKey].done++;
+    dayMap[dayKey].vol += rub;
+    dayMap[dayKey].profit += profit;
+    if (rate > 0) { dayMap[dayKey].rates.push(rate); rates.push(rate); }
+    if (spread > 0) dayMap[dayKey].spreads.push(spread);
+  }
+
+  // KPI курса
+  if (rates.length > 0) {
+    document.getElementById('rateCurrent').textContent = fmtNum(rates[rates.length-1], 2) + ' ₽';
+    document.getElementById('rateMin').textContent = fmtNum(Math.min(...rates), 2) + ' ₽';
+    document.getElementById('rateMax').textContent = fmtNum(Math.max(...rates), 2) + ' ₽';
+    document.getElementById('rateAvg').textContent = fmtNum(rates.reduce((s,r)=>s+r,0)/rates.length, 2) + ' ₽';
+  }
+
+  // График курса
+  const sortedDays = Object.keys(dayMap).sort();
+  const avgRatesByDay = sortedDays.map(d => {
+    const r = dayMap[d].rates;
+    return r.length > 0 ? r.reduce((s,v)=>s+v,0)/r.length : null;
+  });
+
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  const gridColor = isDark ? '#262523' : '#dcd9d5';
+  const textColor = isDark ? '#797876' : '#7a7974';
+  const ctx = document.getElementById('chartRates').getContext('2d');
+  if (ratesChart) ratesChart.destroy();
+  ratesChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: sortedDays.map(d => d.replace(/^\d{4}-/, '')), // убираем год
+      datasets: [{
+        label: 'Ср. курс USDT/RUB',
+        data: avgRatesByDay,
+        borderColor: '#4f98a3',
+        backgroundColor: 'rgba(79,152,163,0.1)',
+        borderWidth: 2,
+        pointRadius: 4,
+        pointBackgroundColor: '#4f98a3',
+        tension: 0.3,
+        fill: true,
+        spanGaps: true
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: textColor, font:{size:11} }, grid: { display: false } },
+        y: {
+          ticks: { color: textColor, font:{size:11}, callback: v => v.toFixed(1)+' ₽' },
+          grid: { color: gridColor }
+        }
+      }
+    }
+  });
+  window.ratesChart = ratesChart;
+
+  // Таблица по дням
+  document.getElementById('dailyTableBody').innerHTML = sortedDays.map((d, i) => {
+    const v = dayMap[d];
+    const avgR = v.rates.length > 0 ? v.rates.reduce((s,x)=>s+x,0)/v.rates.length : 0;
+    const avgS = v.spreads.length > 0 ? v.spreads.reduce((s,x)=>s+x,0)/v.spreads.length : 0;
+    const bg = i%2===0 ? '' : 'style="background:var(--surface-2)"';
+    return `<tr ${bg}>
+      <td>${d}</td>
+      <td class="num">${v.total}</td>
+      <td class="num">${v.done}</td>
+      <td class="num">${fmtNum(v.vol,0)} ₽</td>
+      <td class="num ${v.profit>=0?'positive':'negative'}">${fmtSign(v.profit,2)} ₮</td>
+      <td class="num">${avgR>0?fmtNum(avgR,2)+' ₽':'—'}</td>
+      <td class="num">${avgS>0?fmtNum(avgS,2)+'%':'—'}</td>
+    </tr>`;
+  }).join('');
+
+  // Сравнение недель (из Dashboard листа)
+  renderWeekComparison(dash);
+}
+
+function renderWeekComparison(dash) {
+  const grid = document.getElementById('weekCompareGrid');
+  if (!dash || !dash.length) {
+    grid.innerHTML = '<div class="kpi-card" style="grid-column:1/-1"><div class="kpi-label">Сравнение недель</div><div class="kpi-sub">Данные прошлой недели появятся после первого «Закрыть неделю»</div></div>';
+    return;
+  }
+
+  // Ищем строку архива в Dashboard (A5:M5 = текущая, A6 = прошлая неделя)
+  // Структура Dashboard: строка 2 = заголовки, строка 4 = итоги тек. недели, строка 6+ = сотрудники
+  // Запасной вариант: читаем последние две строки Archive (Aрхив лист)
+  // Но мы не читаем Archive через API, поэтому используем данные из Dashboard листа:
+  // Строка 4 (index 3) = текущая
+  // Строка 5 (index 4) = последняя закрытая неделя
+  const cur = dash[3] || [];
+  const prev = dash[4] || [];
+
+  function pct(c, p) {
+    if (!p || parseNum(p) === 0) return '';
+    const diff = parseNum(c) - parseNum(p);
+    const pctVal = diff / Math.abs(parseNum(p)) * 100;
+    const sign = pctVal >= 0 ? '+' : '';
+    const cls = pctVal >= 0 ? 'positive' : 'negative';
+    return `<span class="${cls}" style="font-size:11px;font-weight:500">${sign}${pctVal.toFixed(1)}%</span>`;
+  }
+
+  function compareCard(label, curVal, prevVal, fmt, unit) {
+    const c = parseNum(curVal);
+    const p = parseNum(prevVal);
+    const curFmt = c !== null ? fmtNum(c, fmt) + (unit||'') : '—';
+    const prevFmt = p !== null && p !== 0 ? fmtNum(p, fmt) + (unit||'') : '—';
+    const delta = prevVal && parseNum(prevVal) !== 0 ? pct(curVal, prevVal) : '';
+    return `<div class="kpi-card">
+      <div class="kpi-label">${label}</div>
+      <div class="kpi-value accent" style="font-size:18px">${curFmt}</div>
+      <div class="kpi-sub">Прошлое: ${prevFmt} ${delta}</div>
+    </div>`;
+  }
+
+  // Индексы столбцов Dashboard в строке 3 (индекс 3):
+  // C = Неделя (2), D = Сделок (3), E = Оборот (4), F = Прибыль (5), G = Ср. прибыль (6)
+  grid.innerHTML =
+    compareCard('Сделок', cur[3], prev[3], 0, '') +
+    compareCard('Оборот ₽', cur[4], prev[4], 0, ' ₽') +
+    compareCard('Прибыль USDT', cur[5], prev[5], 2, ' ₮') +
+    compareCard('Ср. прибыль/сд.', cur[6], prev[6], 3, ' ₮');
 }
 
 // ── DATA LOADING ──
